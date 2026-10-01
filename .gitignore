@@ -1,0 +1,22 @@
+# IntelliJ IDEA
+.idea/
+
+# Terraform
+**/.terraform/
+**/*.tfstate
+**/*.tfstate.*
+*.tfvars
+*.tfvars.json
+
+# Integration test artifacts
+test/app.*/
+test/artifacts/
+test/bin/
+test/tmp/
+
+# Generated backup artifacts
+/bin/
+/tmp/
+
+# Local variable script (contains secrets)
+/terraform.sh

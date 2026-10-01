@@ -1,0 +1,106 @@
+$ErrorActionPreference = "Stop"
+
+$BackupDirectory = "${TF_BACKUP_TMP_DIR}"
+$DumpFile = "${TF_DUMP_NAME}"
+$ArchiveFile = "${TF_ARCHIVE_NAME}"
+$S3Uri = "s3://${TF_S3_BACKUP_BUCKET}/${TF_ARCHIVE_NAME}"
+$KeycloakContainer = "${TF_KEYCLOAK_CONTAINER}"
+$KeycloakStopped = $false
+$PreviousMysqlPwd = $env:MYSQL_PWD
+
+function Invoke-Docker {
+    & docker @args
+    if ($LASTEXITCODE -ne 0) {
+        throw "Docker command failed with exit code $LASTEXITCODE"
+    }
+}
+
+# Runs the AWS CLI in Docker with the host's AWS credentials and configuration.
+function Invoke-AwsCli {
+    param([string[]] $Arguments)
+
+    $DockerArguments = @(
+        "run", "--rm", "--network", "${TF_DOCKER_NETWORK}",
+        "--mount", "type=bind,source=$BackupDirectory,target=/backup"
+    )
+    $AwsDirectory = Join-Path $HOME ".aws"
+    if (Test-Path -LiteralPath $AwsDirectory) {
+        $DockerArguments += @("--mount", "type=bind,source=$AwsDirectory,target=/root/.aws,readonly")
+    }
+    foreach ($VariableName in @(
+        "AWS_ACCESS_KEY_ID",
+        "AWS_SECRET_ACCESS_KEY",
+        "AWS_SESSION_TOKEN",
+        "AWS_DEFAULT_REGION",
+        "AWS_REGION",
+        "AWS_PROFILE"
+    )) {
+        if (-not [string]::IsNullOrEmpty([Environment]::GetEnvironmentVariable($VariableName))) {
+            $DockerArguments += @("--env", $VariableName)
+        }
+    }
+    $DockerArguments += @("${TF_AWS_CLI_IMAGE}") + $Arguments
+    Invoke-Docker @DockerArguments
+}
+
+function Remove-BackupFiles {
+    foreach ($FileName in @($DumpFile, $ArchiveFile)) {
+        Remove-Item -LiteralPath (Join-Path $BackupDirectory $FileName) -Force -ErrorAction SilentlyContinue
+    }
+}
+
+New-Item -ItemType Directory -Force -Path $BackupDirectory | Out-Null
+Remove-BackupFiles
+
+try {
+    $MysqlPassword = $env:MYSQL_PASSWORD
+    if ([string]::IsNullOrEmpty($MysqlPassword)) {
+        if ([string]::IsNullOrEmpty("${TF_MYSQL_PASSWORD_SSM_PARAM}")) {
+            throw "Set MYSQL_PASSWORD to the password for MySQL user ${TF_MYSQL_USERNAME}"
+        }
+        Write-Host "Reading MySQL password from SSM"
+        $MysqlPassword = (Invoke-AwsCli @(
+            "ssm", "get-parameter", "--with-decryption",
+            "--name", "${TF_MYSQL_PASSWORD_SSM_PARAM}",
+            "--query", "Parameter.Value", "--output", "text"
+        ) | Out-String).Trim()
+    }
+    $env:MYSQL_PWD = $MysqlPassword
+
+    Write-Host "Downloading backup from S3"
+    $S3Arguments = @("s3", "cp")
+    if (-not [string]::IsNullOrEmpty($env:AWS_S3_ENDPOINT_URL)) {
+        $S3Arguments += @("--endpoint-url", $env:AWS_S3_ENDPOINT_URL)
+    }
+    Invoke-AwsCli ($S3Arguments + @($S3Uri, "/backup/$ArchiveFile"))
+
+    Write-Host "Extracting archive"
+    Invoke-Docker run --rm --mount "type=bind,source=$BackupDirectory,target=/backup" --workdir /backup `
+        "${TF_ZIP_IMAGE}" python -m zipfile -e $ArchiveFile .
+    if (-not (Test-Path -LiteralPath (Join-Path $BackupDirectory $DumpFile))) {
+        throw "Archive does not contain $DumpFile"
+    }
+
+    Write-Host "Stopping Keycloak"
+    Invoke-Docker stop $KeycloakContainer | Out-Null
+    $KeycloakStopped = $true
+
+    Write-Host "Restoring database ${TF_MYSQL_DATABASE}"
+    Invoke-Docker run --rm --network "${TF_DOCKER_NETWORK}" --env MYSQL_PWD `
+        --mount "type=bind,source=$BackupDirectory,target=/backup,readonly" `
+        "${TF_MYSQL_CLIENT_IMAGE}" sh -c "mysql --host='${TF_MYSQL_HOST}' --port='${TF_MYSQL_PORT}' --user='${TF_MYSQL_USERNAME}' --database='${TF_MYSQL_DATABASE}' < '/backup/$DumpFile'"
+
+    Write-Host "Starting Keycloak"
+    Invoke-Docker start $KeycloakContainer | Out-Null
+    $KeycloakStopped = $false
+
+    Write-Host "Backup restored from $S3Uri"
+}
+finally {
+    $env:MYSQL_PWD = $PreviousMysqlPwd
+    Remove-BackupFiles
+    if ($KeycloakStopped) {
+        Write-Host "Starting Keycloak"
+        & docker start $KeycloakContainer | Out-Null
+    }
+}

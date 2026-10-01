@@ -1,0 +1,83 @@
+#!/bin/sh
+
+set -eu
+
+BACKUP_TMP_DIR="${TF_BACKUP_TMP_DIR}"
+DUMP_FILE="${TF_DUMP_NAME}"
+ARCHIVE_FILE="${TF_ARCHIVE_NAME}"
+S3_URI="s3://${TF_S3_BACKUP_BUCKET}/${TF_ARCHIVE_NAME}"
+KEYCLOAK_CONTAINER="${TF_KEYCLOAK_CONTAINER}"
+KEYCLOAK_STOPPED=0
+
+cleanup() {
+  status=$?
+  rm -f "$BACKUP_TMP_DIR/$DUMP_FILE" "$BACKUP_TMP_DIR/$ARCHIVE_FILE"
+  if [ "$KEYCLOAK_STOPPED" -eq 1 ]; then
+    echo "Starting Keycloak"
+    docker start "$KEYCLOAK_CONTAINER" >/dev/null || status=1
+  fi
+  exit "$status"
+}
+trap cleanup EXIT
+
+# Runs the AWS CLI in Docker with the host's AWS credentials and configuration.
+aws_cli() {
+  set -- --rm --network "${TF_DOCKER_NETWORK}" --volume "$BACKUP_TMP_DIR:/backup" "${TF_AWS_CLI_IMAGE}" "$@"
+  if [ -d "$HOME/.aws" ]; then
+    set -- --volume "$HOME/.aws:/root/.aws:ro" "$@"
+  fi
+  for name in AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN AWS_DEFAULT_REGION AWS_REGION AWS_PROFILE; do
+    if [ -n "$(printenv "$name" || true)" ]; then
+      set -- --env "$name" "$@"
+    fi
+  done
+  docker run "$@"
+}
+
+s3_cp() {
+  if [ -n "$${AWS_S3_ENDPOINT_URL:-}" ]; then
+    aws_cli s3 cp --endpoint-url "$AWS_S3_ENDPOINT_URL" "$1" "$2"
+  else
+    aws_cli s3 cp "$1" "$2"
+  fi
+}
+
+mkdir -p "$BACKUP_TMP_DIR"
+rm -f "$BACKUP_TMP_DIR/$DUMP_FILE" "$BACKUP_TMP_DIR/$ARCHIVE_FILE"
+
+if [ -z "$${MYSQL_PASSWORD:-}" ]; then
+  if [ -z "${TF_MYSQL_PASSWORD_SSM_PARAM}" ]; then
+    echo "Set MYSQL_PASSWORD to the password for MySQL user ${TF_MYSQL_USERNAME}" >&2
+    exit 1
+  fi
+  echo "Reading MySQL password from SSM"
+  MYSQL_PASSWORD="$(aws_cli ssm get-parameter --with-decryption \
+    --name "${TF_MYSQL_PASSWORD_SSM_PARAM}" --query Parameter.Value --output text)"
+fi
+MYSQL_PWD="$MYSQL_PASSWORD"
+export MYSQL_PWD
+
+echo "Stopping Keycloak"
+docker stop "$KEYCLOAK_CONTAINER" >/dev/null
+KEYCLOAK_STOPPED=1
+
+echo "Dumping database ${TF_MYSQL_DATABASE}"
+docker run --rm --network "${TF_DOCKER_NETWORK}" --env MYSQL_PWD \
+  --volume "$BACKUP_TMP_DIR:/backup" \
+  "${TF_MYSQL_CLIENT_IMAGE}" sh -c "mysqldump \
+    --host='${TF_MYSQL_HOST}' --port='${TF_MYSQL_PORT}' --user='${TF_MYSQL_USERNAME}' \
+    --single-transaction --routines --triggers --no-tablespaces --set-gtid-purged=OFF \
+    '${TF_MYSQL_DATABASE}' > '/backup/$DUMP_FILE'"
+
+echo "Starting Keycloak"
+docker start "$KEYCLOAK_CONTAINER" >/dev/null
+KEYCLOAK_STOPPED=0
+
+echo "Creating archive"
+docker run --rm --volume "$BACKUP_TMP_DIR:/backup" --workdir /backup \
+  "${TF_ZIP_IMAGE}" python -m zipfile -c "$ARCHIVE_FILE" "$DUMP_FILE"
+
+echo "Uploading backup to S3"
+s3_cp "/backup/$ARCHIVE_FILE" "$S3_URI"
+
+echo "Backup uploaded to $S3_URI"
