@@ -49,6 +49,11 @@ Development mode is not appropriate for an internet-facing production deployment
 state contains database credentials and Docker environment values, so keep state files
 private and do not commit `.tfvars` files.
 
+For numeric Keycloak image tags at version 24 and newer, Terraform uses
+`KC_PROXY_HEADERS=xforwarded` and `KC_HTTP_ENABLED=true`; older tags continue using the legacy
+`KC_PROXY` setting. The proxy must overwrite the `X-Forwarded-*` headers, including
+`X-Forwarded-Proto`, and the Keycloak HTTP port should only be reachable from trusted networks.
+
 ## Backup and restore
 
 Terraform writes backup and restore scripts for the configured host platform only:

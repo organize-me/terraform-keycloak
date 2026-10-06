@@ -40,7 +40,7 @@ variable "keycloak_http_relative_path" {
 }
 
 variable "keycloak_proxy" {
-  description = "Keycloak proxy mode"
+  description = "Legacy Keycloak proxy mode used for image tags earlier than version 24"
   type        = string
   default     = "edge"
 }

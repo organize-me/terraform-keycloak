@@ -3,6 +3,21 @@ resource "docker_image" "keycloak" {
   keep_locally = true
 }
 
+locals {
+  keycloak_major_version = try(
+    tonumber(regex(":v?([0-9]+)\\.", var.keycloak_image)[0]),
+    0,
+  )
+
+  # Keycloak 24+ replaces the legacy proxy mode with explicit proxy headers.
+  keycloak_proxy_environment = local.keycloak_major_version >= 24 ? [
+    "KC_PROXY_HEADERS=xforwarded",
+    "KC_HTTP_ENABLED=true",
+    ] : [
+    "KC_PROXY=${var.keycloak_proxy}",
+  ]
+}
+
 resource "docker_container" "keycloak" {
   image        = docker_image.keycloak.image_id
   name         = var.keycloak_container_name
@@ -16,20 +31,23 @@ resource "docker_container" "keycloak" {
     var.keycloak_http_relative_path,
   ]
 
-  env = concat([
-    "TZ=${var.timezone}",
-    "KC_DB=mysql",
-    "KC_DB_URL_HOST=${var.keycloak_db_host}",
-    "KC_DB_URL_PORT=${var.keycloak_db_port}",
-    "KC_DB_URL_DATABASE=${mysql_database.keycloak.name}",
-    "KC_DB_USERNAME=${var.keycloak_db_username}",
-    "KC_DB_PASSWORD=${var.keycloak_db_password}",
-    "KC_DB_URL_PROPERTIES=?connectTimeout=30",
-    "KC_PROXY=${var.keycloak_proxy}",
-    ], var.keycloak_admin_password == null ? [] : [
-    "KEYCLOAK_ADMIN=${var.keycloak_admin_username}",
-    "KEYCLOAK_ADMIN_PASSWORD=${var.keycloak_admin_password}",
-  ])
+  env = concat(
+    [
+      "TZ=${var.timezone}",
+      "KC_DB=mysql",
+      "KC_DB_URL_HOST=${var.keycloak_db_host}",
+      "KC_DB_URL_PORT=${var.keycloak_db_port}",
+      "KC_DB_URL_DATABASE=${mysql_database.keycloak.name}",
+      "KC_DB_USERNAME=${var.keycloak_db_username}",
+      "KC_DB_PASSWORD=${var.keycloak_db_password}",
+      "KC_DB_URL_PROPERTIES=?connectTimeout=30",
+    ],
+    local.keycloak_proxy_environment,
+    var.keycloak_admin_password == null ? [] : [
+      "KEYCLOAK_ADMIN=${var.keycloak_admin_username}",
+      "KEYCLOAK_ADMIN_PASSWORD=${var.keycloak_admin_password}",
+    ],
+  )
 
   ports {
     internal = 8080
