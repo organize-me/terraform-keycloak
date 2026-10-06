@@ -51,11 +51,12 @@ private and do not commit `.tfvars` files.
 
 ## Backup and restore
 
-Terraform writes executable `bin/keycloak-backup.sh` and `bin/keycloak-restore.sh`
-scripts, plus PowerShell versions (`.ps1`) for Windows hosts. Set `backup_s3_bucket` to the
-S3 bucket that stores the archive (`backup_archive_name`, default `keycloak.zip`). The
-archive contains a single `database.bak` MySQL dump, the same format as the previous
-hand-written scripts, so existing backups can be restored.
+Terraform writes backup and restore scripts for the configured host platform only:
+PowerShell (`.ps1`) when `docker_host` uses the Windows named pipe (`npipe:`), otherwise
+POSIX shell (`.sh`). Set `backup_s3_bucket` to the S3 bucket that stores the archive
+(`backup_archive_name`, default `keycloak.zip`). The archive contains a single
+`database.bak` MySQL dump, the same format as the previous hand-written scripts, so
+existing backups can be restored.
 
 The scripts only need the Docker CLI on the host: `mysqldump`/`mysql` run in
 `backup_mysql_image`, zipping runs in `backup_zip_image`, and S3 transfers run in
@@ -64,9 +65,17 @@ or the standard `AWS_*` environment variables; set `AWS_S3_ENDPOINT_URL` to use 
 S3-compatible endpoint.
 
 The MySQL user defaults to `keycloak_db_username`; override it with
-`backup_mysql_username`. The password is read from `MYSQL_PASSWORD` at runtime or, if
-that is unset and `backup_mysql_password_ssm_parameter` is configured, from that SSM
-parameter. Passwords are never written into the generated scripts.
+`backup_mysql_username`. For the default backup user, the generated scripts embed
+`keycloak_db_password`; set `backup_mysql_password` to embed a different backup user's
+password. The password is base64-encoded in the script and decoded at runtime. If no
+password is embedded, the scripts read `MYSQL_PASSWORD` or, if that is unset and
+`backup_mysql_password_ssm_parameter` is configured, retrieve it from that SSM parameter.
+On POSIX hosts, generated scripts use owner-only permissions because they may contain
+credentials; apply restrictive ACLs to generated PowerShell scripts on Windows. Terraform
+state also contains the rendered scripts and sensitive values, so protect it accordingly.
+After Terraform renders the scripts, they do not depend on `TF_VAR_*` variables at
+runtime. AWS credentials are still supplied through the standard AWS profile or `AWS_*`
+environment variables for S3 access.
 
 The backup script stops Keycloak, dumps the database, restarts Keycloak, zips the dump, and
 uploads it to S3. The restore script downloads and extracts the archive, stops Keycloak,

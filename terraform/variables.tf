@@ -169,8 +169,15 @@ variable "backup_mysql_username" {
   default     = null
 }
 
+variable "backup_mysql_password" {
+  description = "Optional password to embed for backup_mysql_username; defaults to keycloak_db_password when using the default backup user"
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
 variable "backup_mysql_password_ssm_parameter" {
-  description = "Optional SSM parameter holding the backup MySQL password, used when MYSQL_PASSWORD is not set"
+  description = "Optional SSM parameter holding the backup MySQL password, used when it is not embedded and MYSQL_PASSWORD is not set"
   type        = string
   default     = ""
 }

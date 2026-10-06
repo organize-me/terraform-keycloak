@@ -53,7 +53,13 @@ New-Item -ItemType Directory -Force -Path $BackupDirectory | Out-Null
 Remove-BackupFiles
 
 try {
-    $MysqlPassword = $env:MYSQL_PASSWORD
+    $EmbeddedMysqlPassword = "${TF_MYSQL_PASSWORD_B64}"
+    $MysqlPassword = if ([string]::IsNullOrEmpty($EmbeddedMysqlPassword)) {
+        $env:MYSQL_PASSWORD
+    }
+    else {
+        [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($EmbeddedMysqlPassword))
+    }
     if ([string]::IsNullOrEmpty($MysqlPassword)) {
         if ([string]::IsNullOrEmpty("${TF_MYSQL_PASSWORD_SSM_PARAM}")) {
             throw "Set MYSQL_PASSWORD to the password for MySQL user ${TF_MYSQL_USERNAME}"

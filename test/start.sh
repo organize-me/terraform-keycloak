@@ -46,5 +46,5 @@ echo "MySQL is published on localhost:$TF_VAR_mysql_external_port (root / $TF_VA
 echo "Backup script:  $TF_VAR_backup_install_path/keycloak-backup.sh"
 echo "Restore script: $TF_VAR_backup_install_path/keycloak-restore.sh"
 echo "Set these before running the scripts:"
-echo "  export MYSQL_PASSWORD=local-test-only AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test AWS_DEFAULT_REGION=us-east-1 AWS_S3_ENDPOINT_URL=http://localstack:4566"
+echo "  export AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test AWS_DEFAULT_REGION=us-east-1 AWS_S3_ENDPOINT_URL=http://localstack:4566"
 echo "Stop with: bash test/stop.sh"

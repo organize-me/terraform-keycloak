@@ -1,4 +1,6 @@
 locals {
+  backup_script_platform = startswith(lower(var.docker_host), "npipe:") ? "windows" : "posix"
+
   backup_template_vars = {
     TF_ARCHIVE_NAME             = var.backup_archive_name
     TF_DUMP_NAME                = "database.bak"
@@ -13,28 +15,40 @@ locals {
     TF_MYSQL_PORT               = var.keycloak_db_port
     TF_MYSQL_DATABASE           = mysql_database.keycloak.name
     TF_MYSQL_USERNAME           = coalesce(var.backup_mysql_username, var.keycloak_db_username)
+    TF_MYSQL_PASSWORD_B64       = local.backup_mysql_password == null ? "" : base64encode(local.backup_mysql_password)
     TF_MYSQL_PASSWORD_SSM_PARAM = var.backup_mysql_password_ssm_parameter
   }
+
+  backup_mysql_password = var.backup_mysql_password != null ? var.backup_mysql_password : (
+    var.backup_mysql_password_ssm_parameter != "" ? null :
+    (var.backup_mysql_username == null || var.backup_mysql_username == var.keycloak_db_username ? var.keycloak_db_password : null)
+  )
 }
 
 resource "local_file" "backup_script" {
+  count           = local.backup_script_platform == "posix" ? 1 : 0
   filename        = "${var.backup_install_path}/keycloak-backup.sh"
-  file_permission = "0755"
+  file_permission = "0700"
   content         = templatefile("${path.module}/backup/backup.sh.tftpl", local.backup_template_vars)
 }
 
 resource "local_file" "restore_script" {
+  count           = local.backup_script_platform == "posix" ? 1 : 0
   filename        = "${var.backup_install_path}/keycloak-restore.sh"
-  file_permission = "0755"
+  file_permission = "0700"
   content         = templatefile("${path.module}/backup/restore.sh.tftpl", local.backup_template_vars)
 }
 
 resource "local_file" "backup_powershell_script" {
-  filename = "${var.backup_install_path}/keycloak-backup.ps1"
-  content  = templatefile("${path.module}/backup/backup.ps1.tftpl", local.backup_template_vars)
+  count           = local.backup_script_platform == "windows" ? 1 : 0
+  filename        = "${var.backup_install_path}/keycloak-backup.ps1"
+  file_permission = "0600"
+  content         = templatefile("${path.module}/backup/backup.ps1.tftpl", local.backup_template_vars)
 }
 
 resource "local_file" "restore_powershell_script" {
-  filename = "${var.backup_install_path}/keycloak-restore.ps1"
-  content  = templatefile("${path.module}/backup/restore.ps1.tftpl", local.backup_template_vars)
+  count           = local.backup_script_platform == "windows" ? 1 : 0
+  filename        = "${var.backup_install_path}/keycloak-restore.ps1"
+  file_permission = "0600"
+  content         = templatefile("${path.module}/backup/restore.ps1.tftpl", local.backup_template_vars)
 }

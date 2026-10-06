@@ -41,7 +41,6 @@ export TF_VAR_backup_zip_image="python:3.12-alpine"
 export TF_VAR_backup_install_path="$ROOT_DIR/test/bin"
 export TF_VAR_backup_tmp_dir="$ROOT_DIR/test/tmp"
 
-export MYSQL_PASSWORD="local-test-only"
 export AWS_ACCESS_KEY_ID="test"
 export AWS_SECRET_ACCESS_KEY="test"
 export AWS_DEFAULT_REGION="us-east-1"

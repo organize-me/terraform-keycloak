@@ -47,7 +47,6 @@ $env:TF_VAR_backup_mysql_image = "mysql:8.0"
 $env:TF_VAR_backup_zip_image = "python:3.12-alpine"
 $env:TF_VAR_backup_install_path = $TestBinaryDirectory
 $env:TF_VAR_backup_tmp_dir = $TestTemporaryDirectory
-$env:MYSQL_PASSWORD = "local-test-only"
 $env:AWS_ACCESS_KEY_ID = "test"
 $env:AWS_SECRET_ACCESS_KEY = "test"
 $env:AWS_DEFAULT_REGION = "us-east-1"
@@ -198,7 +197,7 @@ try {
         Write-Host "Backup script:  $(Join-Path $TestBinaryDirectory 'keycloak-backup.ps1')"
         Write-Host "Restore script: $(Join-Path $TestBinaryDirectory 'keycloak-restore.ps1')"
         Write-Host "Set these before running the scripts:"
-        Write-Host "  `$env:MYSQL_PASSWORD='local-test-only'; `$env:AWS_ACCESS_KEY_ID='test'; `$env:AWS_SECRET_ACCESS_KEY='test'; `$env:AWS_DEFAULT_REGION='us-east-1'; `$env:AWS_S3_ENDPOINT_URL='http://localstack:4566'"
+        Write-Host "  `$env:AWS_ACCESS_KEY_ID='test'; `$env:AWS_SECRET_ACCESS_KEY='test'; `$env:AWS_DEFAULT_REGION='us-east-1'; `$env:AWS_S3_ENDPOINT_URL='http://localstack:4566'"
         Write-Host "Stop with: .\test\stop.ps1"
         return
     }

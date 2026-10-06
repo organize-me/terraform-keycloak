@@ -45,7 +45,13 @@ s3_cp() {
 mkdir -p "$BACKUP_TMP_DIR"
 rm -f "$BACKUP_TMP_DIR/$DUMP_FILE" "$BACKUP_TMP_DIR/$ARCHIVE_FILE"
 
-if [ -z "$${MYSQL_PASSWORD:-}" ]; then
+EMBEDDED_MYSQL_PASSWORD_B64="${TF_MYSQL_PASSWORD_B64}"
+
+if [ -n "$EMBEDDED_MYSQL_PASSWORD_B64" ]; then
+  MYSQL_PASSWORD="$(docker run --rm "${TF_ZIP_IMAGE}" python -c \
+    'import base64,sys; sys.stdout.write(base64.b64decode(sys.argv[1]).decode())' \
+    "$EMBEDDED_MYSQL_PASSWORD_B64")"
+elif [ -z "$${MYSQL_PASSWORD:-}" ]; then
   if [ -z "${TF_MYSQL_PASSWORD_SSM_PARAM}" ]; then
     echo "Set MYSQL_PASSWORD to the password for MySQL user ${TF_MYSQL_USERNAME}" >&2
     exit 1
