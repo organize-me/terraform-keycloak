@@ -18,7 +18,7 @@ variable "docker_network" {
 variable "keycloak_image" {
   description = "Keycloak Docker image to run"
   type        = string
-  default     = "quay.io/keycloak/keycloak:22.0.5"
+  default     = "quay.io/keycloak/keycloak:26.5.7"
 }
 
 variable "keycloak_container_name" {

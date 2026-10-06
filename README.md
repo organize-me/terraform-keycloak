@@ -40,7 +40,7 @@ terraform apply
 the address Keycloak uses on the Docker network. On Windows, set
 `TF_VAR_docker_host=npipe:////./pipe/docker_engine`.
 
-The container uses the inspected Keycloak 22.0.5 image, publishes port 8080, and serves
+The container uses the inspected Keycloak 26.5.7 image, publishes port 8080, and serves
 under `/auth` on the `keycloak` network alias. The default URL is
 `http://localhost:8080/auth`.
 
